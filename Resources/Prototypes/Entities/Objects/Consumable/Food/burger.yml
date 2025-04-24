@@ -26,15 +26,18 @@
         amount: 1
       - id: FoodBreadBunBottom
         amount: 1
+  - type: Tag
+    tags:
+    - Burger
 
 - type: entity
   id: FoodBreadBunBottom
   parent: FoodBreadSliceBase
   name: bottom bun
-  description: It's time to start building the burger tower. 
+  description: It's time to start building the burger tower.
   components:
   - type: Item
-    size: Normal #patch until there is an adequate resizing system in place 
+    size: Normal #patch until there is an adequate resizing system in place
   - type: Food
   - type: Sprite
     drawdepth: Mobs
@@ -61,6 +64,9 @@
         reagents:
         - ReagentId: Nutriment
           Quantity: 3.3 # 1/2 of a bun
+  - type: Tag
+    tags:
+    - Burger
 
 - type: entity
   id: FoodBreadBunTop
@@ -83,7 +89,9 @@
   - type: FoodSequenceElement
     entries:
       Burger: BunTopBurger
-  
+  - type: Tag
+    tags:
+    - Burger
 # Base
 
 - type: entity
@@ -110,6 +118,9 @@
           Quantity: 3
   - type: Item
     sprite: Objects/Consumable/Food/burger.rsi
+  - type: Tag
+    tags:
+    - Burger
 
 # Custom Burger Example
 
@@ -687,7 +698,7 @@
   description: An elusive rib shaped burger with limited availability across the galaxy. Not as good as you remember it.
   components:
   - type: Food
-    trash: 
+    trash:
     - FoodKebabSkewer
   - type: FlavorProfile
     flavors:
@@ -987,4 +998,4 @@
   - type: Tag
     tags:
     - Meat
-    
+

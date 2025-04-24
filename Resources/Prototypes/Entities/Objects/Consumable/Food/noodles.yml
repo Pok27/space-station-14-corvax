@@ -18,6 +18,9 @@
         reagents:
         - ReagentId: Nutriment
           Quantity: 20
+  - type: Tag
+    tags:
+    - Noodles
 
 # Noodles
 
