@@ -271,16 +271,14 @@ public class RadialMenuTextureButtonBase : TextureButton
     /// <inheritdoc />
     protected override void KeyBindDown(GUIBoundKeyEventArgs args)
     {
-        if (args.Function == EngineKeyFunctions.UIClick
-            || args.Function == ContentKeyFunctions.AltActivateItemInWorld)
+        if (args.Function == EngineKeyFunctions.UIClick || args.Function == ContentKeyFunctions.AltActivateItemInWorld)
             base.KeyBindDown(args);
     }
 
     /// <inheritdoc />
     protected override void KeyBindUp(GUIBoundKeyEventArgs args)
     {
-        if (args.Function == EngineKeyFunctions.UIClick
-            || args.Function == ContentKeyFunctions.AltActivateItemInWorld)
+        if (args.Function == EngineKeyFunctions.UIClick || args.Function == ContentKeyFunctions.AltActivateItemInWorld)
             base.KeyBindUp(args);
     }
 }
