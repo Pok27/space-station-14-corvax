@@ -10,7 +10,7 @@ using Robust.Shared.Input;
 namespace Content.Client.UserInterface.Controls;
 
 [Virtual]
-public class RadialMenu : Popup
+public class RadialMenu : BaseWindow
 {
     /// <summary>
     /// Contextual button used to traverse through previous layers of the radial menu
@@ -78,9 +78,6 @@ public class RadialMenu : Popup
     /// </remarks>
     public RadialMenu()
     {
-        // Add to ModalRoot for proper positioning and behavior
-        UserInterfaceManager.ModalRoot.AddChild(this);
-
         // Hide all starting children (if any) except the first (this is the active layer)
         if (ChildCount > 1)
         {
@@ -230,6 +227,32 @@ public class RadialMenu : Popup
     {
         Dispose();
     }
+
+    /// <inheritdoc />
+    protected override void KeyBindDown(GUIBoundKeyEventArgs args)
+    {
+        // Allow text input controls to handle their own keybinds
+        if (UserInterfaceManager.KeyboardFocused is LineEdit)
+        {
+            // Don't handle the keybind here, let the LineEdit handle it
+            return;
+        }
+
+        base.KeyBindDown(args);
+    }
+
+    /// <inheritdoc />
+    protected override void KeyBindUp(GUIBoundKeyEventArgs args)
+    {
+        // Allow text input controls to handle their own keybinds
+        if (UserInterfaceManager.KeyboardFocused is LineEdit)
+        {
+            // Don't handle the keybind here, let the LineEdit handle it
+            return;
+        }
+
+        base.KeyBindUp(args);
+    }
 }
 
 /// <summary>
@@ -246,11 +269,27 @@ public class RadialMenuTextureButtonBase : TextureButton
     }
 
     /// <inheritdoc />
-    protected override void KeyBindUp(GUIBoundKeyEventArgs args)
+    protected override void KeyBindDown(GUIBoundKeyEventArgs args)
     {
+        // Only handle specific keybinds, let others pass through
         if (args.Function == EngineKeyFunctions.UIClick
             || args.Function == ContentKeyFunctions.AltActivateItemInWorld)
+        {
+            base.KeyBindDown(args);
+            args.Handle();
+        }
+    }
+
+    /// <inheritdoc />
+    protected override void KeyBindUp(GUIBoundKeyEventArgs args)
+    {
+        // Only handle specific keybinds, let others pass through
+        if (args.Function == EngineKeyFunctions.UIClick
+            || args.Function == ContentKeyFunctions.AltActivateItemInWorld)
+        {
             base.KeyBindUp(args);
+            args.Handle();
+        }
     }
 }
 
