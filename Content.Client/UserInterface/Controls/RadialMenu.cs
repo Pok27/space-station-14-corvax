@@ -10,7 +10,7 @@ using Robust.Shared.Input;
 namespace Content.Client.UserInterface.Controls;
 
 [Virtual]
-public class RadialMenu : BaseWindow
+public class RadialMenu : Popup
 {
     /// <summary>
     /// Contextual button used to traverse through previous layers of the radial menu
@@ -78,6 +78,9 @@ public class RadialMenu : BaseWindow
     /// </remarks>
     public RadialMenu()
     {
+        // Add to ModalRoot for proper positioning and behavior
+        UserInterfaceManager.ModalRoot.AddChild(this);
+
         // Hide all starting children (if any) except the first (this is the active layer)
         if (ChildCount > 1)
         {
@@ -221,6 +224,11 @@ public class RadialMenu : BaseWindow
         // Set the style class of the button
         if (_path.Count == 0 && ContextualButton != null && CloseButtonStyleClass != null)
             ContextualButton.SetOnlyStyleClass(CloseButtonStyleClass);
+    }
+
+    public void Close()
+    {
+        Dispose();
     }
 }
 
