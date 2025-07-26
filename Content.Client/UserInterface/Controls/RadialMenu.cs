@@ -271,25 +271,17 @@ public class RadialMenuTextureButtonBase : TextureButton
     /// <inheritdoc />
     protected override void KeyBindDown(GUIBoundKeyEventArgs args)
     {
-        // Only handle specific keybinds, let others pass through
         if (args.Function == EngineKeyFunctions.UIClick
             || args.Function == ContentKeyFunctions.AltActivateItemInWorld)
-        {
             base.KeyBindDown(args);
-            args.Handle();
-        }
     }
 
     /// <inheritdoc />
     protected override void KeyBindUp(GUIBoundKeyEventArgs args)
     {
-        // Only handle specific keybinds, let others pass through
         if (args.Function == EngineKeyFunctions.UIClick
             || args.Function == ContentKeyFunctions.AltActivateItemInWorld)
-        {
             base.KeyBindUp(args);
-            args.Handle();
-        }
     }
 }
 
