@@ -222,37 +222,6 @@ public class RadialMenu : BaseWindow
         if (_path.Count == 0 && ContextualButton != null && CloseButtonStyleClass != null)
             ContextualButton.SetOnlyStyleClass(CloseButtonStyleClass);
     }
-
-    public void Close()
-    {
-        Dispose();
-    }
-
-    /// <inheritdoc />
-    protected override void KeyBindDown(GUIBoundKeyEventArgs args)
-    {
-        // Allow text input controls to handle their own keybinds
-        if (UserInterfaceManager.KeyboardFocused is LineEdit)
-        {
-            // Don't handle the keybind here, let the LineEdit handle it
-            return;
-        }
-
-        base.KeyBindDown(args);
-    }
-
-    /// <inheritdoc />
-    protected override void KeyBindUp(GUIBoundKeyEventArgs args)
-    {
-        // Allow text input controls to handle their own keybinds
-        if (UserInterfaceManager.KeyboardFocused is LineEdit)
-        {
-            // Don't handle the keybind here, let the LineEdit handle it
-            return;
-        }
-
-        base.KeyBindUp(args);
-    }
 }
 
 /// <summary>
@@ -269,16 +238,10 @@ public class RadialMenuTextureButtonBase : TextureButton
     }
 
     /// <inheritdoc />
-    protected override void KeyBindDown(GUIBoundKeyEventArgs args)
-    {
-        if (args.Function == EngineKeyFunctions.UIClick || args.Function == ContentKeyFunctions.AltActivateItemInWorld)
-            base.KeyBindDown(args);
-    }
-
-    /// <inheritdoc />
     protected override void KeyBindUp(GUIBoundKeyEventArgs args)
     {
-        if (args.Function == EngineKeyFunctions.UIClick || args.Function == ContentKeyFunctions.AltActivateItemInWorld)
+        if (args.Function == EngineKeyFunctions.UIClick
+            || args.Function == ContentKeyFunctions.AltActivateItemInWorld)
             base.KeyBindUp(args);
     }
 }
