@@ -1,2 +1,2 @@
-ent-SelectableLock = 123{ "" }
+ent-SelectableLock = { "" }
     .desc = { "" }
