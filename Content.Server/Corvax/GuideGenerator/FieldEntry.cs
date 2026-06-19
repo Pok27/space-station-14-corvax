@@ -378,6 +378,7 @@ public static class FieldEntry
             TypeCategory.String or TypeCategory.Collection or TypeCategory.ValueType => true,
             TypeCategory.ConcreteClass => !activeTypes.Contains(type) && CanSafelyInitializeDefault(Activator.CreateInstance(type, true)!, activeTypes),
             TypeCategory.AbstractOrInterface => EvaluateAbstractSafety(type, activeTypes),
+            _ => false,
         };
 
     private static bool EvaluateAbstractSafety(Type type, HashSet<Type> activeTypes)
