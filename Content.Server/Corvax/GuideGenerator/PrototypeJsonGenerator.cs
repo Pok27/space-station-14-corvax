@@ -25,10 +25,6 @@ public static class PrototypeJsonGenerator
 
         foreach (var kind in proto.EnumeratePrototypeKinds().OrderBy(t => t.Name))
         {
-            // The entity prototype has its own generator due to its size <see cref="EntityJsonGenerator"/>.
-            if (kind == typeof(EntityPrototype))
-                continue;
-
             if (HasUnsafeSerializedDataField(kind))
                 continue;
 
@@ -49,10 +45,29 @@ public static class PrototypeJsonGenerator
             var outObj = FieldEntry.DeduplicateAgainstDefault(defaultObj, map);
 
             res.UserData.CreateDir(destRoot);
-            var kindName = proto.TryGetKindFrom(kind, out var actualKindName) ? actualKindName : kind.Name;
-            var fileName = TextTools.DecapitalizeString(kindName) + ".json";
-            using var stream = res.UserData.OpenWrite(destRoot / fileName);
-            JsonSerializer.Serialize(stream, outObj, SerializeOptions);
+            var kindName = proto.TryGetKindFrom(kind, out var actualKindName)
+                ? actualKindName
+                : kind.Name;
+            var directoryName = TextTools.CapitalizeString(kindName);
+            var fileName = directoryName + ".json";
+            using (var stream = res.UserData.OpenWrite(destRoot / fileName))
+            {
+                JsonSerializer.Serialize(stream, outObj, SerializeOptions);
+            }
+
+            var kindRoot = destRoot / directoryName;
+            res.UserData.CreateDir(kindRoot);
+
+            using (var defaultStream = res.UserData.OpenWrite(kindRoot / "defaultFields.json"))
+            {
+                JsonSerializer.Serialize(defaultStream, defaultObj, SerializeOptions);
+            }
+
+            foreach (var (id, fields) in outObj)
+            {
+                using var prototypeStream = res.UserData.OpenWrite(kindRoot / (id + ".json"));
+                JsonSerializer.Serialize(prototypeStream, fields, SerializeOptions);
+            }
         }
     }
 

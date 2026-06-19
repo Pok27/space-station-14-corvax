@@ -108,7 +108,7 @@ public static class FieldEntry
                 RemoveDefaultDuplicates(defaultDict, entDict);
         }
 
-        return new Dictionary<string, object?> { ["default"] = defaultObj, ["id"] = map };
+        return map;
     }
 
     private static void RemoveDefaultDuplicates(Dictionary<string, object?> defaults, Dictionary<string, object?> target)

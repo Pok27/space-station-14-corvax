@@ -16,9 +16,6 @@ public sealed class EntityJsonGenerator
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
-    [JsonPropertyName("id")]
-    public string Id { get; }
-
     [JsonPropertyName("name")]
     public string Name { get; }
 
@@ -38,7 +35,6 @@ public sealed class EntityJsonGenerator
         var prototypeManager = IoCManager.Resolve<IPrototypeManager>();
         var loc = IoCManager.Resolve<ILocalizationManager>();
 
-        Id = proto.ID;
         Name = TextTools.CapitalizeString(TextTools.GetDisplayName(proto, prototypeManager, loc));
         Description = proto.Description;
 
