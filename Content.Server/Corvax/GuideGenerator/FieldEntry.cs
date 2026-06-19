@@ -346,11 +346,21 @@ public static class FieldEntry
         }
     }
 
-    private static Type GetMemberType(MemberInfo member) =>
-        member switch { PropertyInfo p => p.PropertyType, FieldInfo f => f.FieldType };
+    public static Type GetMemberType(MemberInfo member) =>
+        member switch
+        {
+            PropertyInfo p => p.PropertyType,
+            FieldInfo f => f.FieldType,
+            _ => throw new ArgumentException($"Unsupported member type: {member.GetType()}", nameof(member)),
+        };
 
     private static object? GetMemberValue(MemberInfo member, object instance) =>
-        member switch { PropertyInfo p => p.GetValue(instance), FieldInfo f => f.GetValue(instance) };
+        member switch
+        {
+            PropertyInfo p => p.GetValue(instance),
+            FieldInfo f => f.GetValue(instance),
+            _ => throw new ArgumentException($"Unsupported member type: {member.GetType()}", nameof(member)),
+        };
 
     private static void SetMemberValue(MemberInfo member, object instance, object value)
     {

@@ -39,7 +39,7 @@ public static class PrototypeJsonGenerator
             {
                 var node = ser.WriteValueAs<MappingDataNode>(kind, p);
                 node.Remove("id");
-                map[p.ID] = FieldEntry.DataNodeToObject(node);
+                map[p.ID] = FieldEntry.ProcessNode(p, node);
             }
 
             if (map.Count == 0)
@@ -89,11 +89,8 @@ public static class PrototypeJsonGenerator
 
         return type.GetFields(flags).Cast<MemberInfo>()
             .Concat(type.GetProperties(flags))
-            .Any(m => HasDataField(m) && IsUnsafeSerializedType(GetMemberType(m), visited));
+            .Any(m => HasDataField(m) && IsUnsafeSerializedType(FieldEntry.GetMemberType(m), visited));
     }
-
-    private static Type GetMemberType(MemberInfo m) =>
-        m switch { PropertyInfo p => p.PropertyType, FieldInfo f => f.FieldType };
 
     private static bool HasDataField(MemberInfo member)
     {
