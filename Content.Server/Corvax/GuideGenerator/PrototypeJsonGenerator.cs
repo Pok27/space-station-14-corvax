@@ -25,6 +25,9 @@ public static class PrototypeJsonGenerator
 
         foreach (var kind in proto.EnumeratePrototypeKinds().OrderBy(t => t.Name))
         {
+            // The entity prototype has its own generator due to its size <see cref="EntityJsonGenerator"/>.
+            var isEntityPrototype = kind == typeof(EntityPrototype);
+
             if (HasUnsafeSerializedDataField(kind))
                 continue;
 
@@ -49,9 +52,11 @@ public static class PrototypeJsonGenerator
                 ? actualKindName
                 : kind.Name;
             var directoryName = TextTools.CapitalizeString(kindName);
-            var fileName = directoryName + ".json";
-            using (var stream = res.UserData.OpenWrite(destRoot / fileName))
+
+            if (!isEntityPrototype)
             {
+                var fileName = directoryName + ".json";
+                using var stream = res.UserData.OpenWrite(destRoot / fileName);
                 JsonSerializer.Serialize(stream, outObj, SerializeOptions);
             }
 
