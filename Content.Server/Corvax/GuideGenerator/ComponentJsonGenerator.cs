@@ -81,12 +81,6 @@ public static class ComponentJsonGenerator
             {
                 JsonSerializer.Serialize(defaultStream, defaultObj, SerializeOptions);
             }
-
-            foreach (var (id, fields) in outObj)
-            {
-                using var componentStream = res.UserData.OpenWrite(componentRoot / (id + ".json"));
-                JsonSerializer.Serialize(componentStream, fields, SerializeOptions);
-            }
         }
     }
 

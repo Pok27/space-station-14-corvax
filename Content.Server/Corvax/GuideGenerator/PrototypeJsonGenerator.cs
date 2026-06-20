@@ -25,10 +25,6 @@ public static class PrototypeJsonGenerator
 
         foreach (var kind in proto.EnumeratePrototypeKinds().OrderBy(t => t.Name))
         {
-            // The entity prototype has its own generator due to its size <see cref="EntityJsonGenerator"/>.
-            if (kind == typeof(EntityPrototype))
-                continue;
-
             if (HasUnsafeSerializedDataField(kind))
                 continue;
 
