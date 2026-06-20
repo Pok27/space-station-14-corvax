@@ -231,43 +231,6 @@ jobs:
           done < <(find "$BASE" -type f -name '*.json' -print0)
 
           batch_size=100
-          max_jobs=4
-
-          process_file() {
-            local file="$1"
-
-            local rel json_title module_title local_lines remote_lines lua_content
-
-            rel="${file#$BASE/}"
-            rel="$(printf "%s" "$rel" | tr -d '\r\n' | sed 's/:/_/g')"
-
-            json_title="$ROOT/$rel"
-            module_title="$MODULE_ROOT/$rel/data"
-
-            echo "Processing $rel → $json_title"
-
-            local_lines=$(awk 'END { print NR }' "$file")
-            remote_lines="${json_lines[$json_title]:-}"
-
-            if [[ -n "$remote_lines" && "$remote_lines" == "$local_lines" ]]; then
-              echo "Skipping unchanged page: $json_title"
-            else
-              echo "Uploading $rel → $json_title"
-              edit_page_file "$json_title" "Update $rel via GitHub Actions" "$file" "$token"
-            fi
-
-            lua_content=$'local loader = require("Module:JsonLoader")\nreturn loader.getFromTitle("'"$json_title"'")'
-
-            local_lines=$(printf '%s' "$lua_content" | awk 'END { print NR }')
-            remote_lines="${module_lines[$module_title]:-}"
-
-            if [[ -n "$remote_lines" && "$remote_lines" == "$local_lines" ]]; then
-              echo "Skipping unchanged module: $module_title"
-            else
-              echo "Creating/updating module → $module_title"
-              edit_page "$module_title" "Auto-create loader module for $rel" "$lua_content" "$token"
-            fi
-          }
 
           for ((i=0; i<${#files[@]}; i+=batch_size)); do
             batch_files=("${files[@]:i:batch_size}")
@@ -288,18 +251,37 @@ jobs:
             query_page_linecounts json_titles json_lines
             query_page_linecounts module_titles module_lines
 
-            pids=()
-
             for file in "${batch_files[@]}"; do
-              process_file "$file" &
-              pids+=($!)
+              rel="${file#$BASE/}"
+              rel="$(printf "%s" "$rel" | tr -d '\r\n' | sed 's/:/_/g')"
 
-              if (( ${#pids[@]} >= max_jobs )); then
-                wait -n
+              json_title="$ROOT/$rel"
+              module_title="$MODULE_ROOT/$rel/data"
+
+              echo "Processing $rel → $json_title"
+
+              local_lines=$(awk 'END { print NR }' "$file")
+              remote_lines="${json_lines[$json_title]:-}"
+
+              if [[ -n "$remote_lines" && "$remote_lines" == "$local_lines" ]]; then
+                echo "Skipping unchanged page: $json_title"
+              else
+                echo "Uploading $rel → $json_title"
+                edit_page_file "$json_title" "Update $rel via GitHub Actions" "$file" "$token"
+              fi
+
+              lua_content=$'local loader = require("Module:JsonLoader")\nreturn loader.getFromTitle("'"$json_title"'")'
+
+              local_lines=$(printf '%s' "$lua_content" | awk 'END { print NR }')
+              remote_lines="${module_lines[$module_title]:-}"
+
+              if [[ -n "$remote_lines" && "$remote_lines" == "$local_lines" ]]; then
+                echo "Skipping unchanged module: $module_title"
+              else
+                echo "Creating/updating module → $module_title"
+                edit_page "$module_title" "Auto-create loader module for $rel" "$lua_content" "$token"
               fi
             done
-
-            wait
           done
 
       # Создает страницы по каждому id подходящей сущности.
