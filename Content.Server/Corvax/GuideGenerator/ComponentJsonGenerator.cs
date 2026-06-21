@@ -67,9 +67,20 @@ public static class ComponentJsonGenerator
             var outObj = FieldEntry.DeduplicateAgainstDefault(defaultObj, map);
 
             res.UserData.CreateDir(destRoot);
-            var fileName = TextTools.DecapitalizeString(compName) + ".json";
-            using var stream = res.UserData.OpenWrite(destRoot / fileName);
-            JsonSerializer.Serialize(stream, outObj, SerializeOptions);
+            var directoryName = TextTools.CapitalizeString(compName);
+            var fileName = directoryName + ".json";
+            using (var stream = res.UserData.OpenWrite(destRoot / fileName))
+            {
+                JsonSerializer.Serialize(stream, outObj, SerializeOptions);
+            }
+
+            var componentRoot = destRoot / directoryName;
+            res.UserData.CreateDir(componentRoot);
+
+            using (var defaultStream = res.UserData.OpenWrite(componentRoot / "defaultFields.json"))
+            {
+                JsonSerializer.Serialize(defaultStream, defaultObj, SerializeOptions);
+            }
         }
     }
 

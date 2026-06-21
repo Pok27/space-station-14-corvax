@@ -172,6 +172,7 @@ namespace Content.Server.Entry
                 WriteFile("entity_name.json", EntityNameDuplicatesJsonGenerator.PublishNameJson);
                 WriteFile("entity_name_wiki.json", file => WikiEntityNameGenerator.PublishJson(file, _res, resPath));
                 WriteFile("entity_name_duplicates.json", EntityNameDuplicatesJsonGenerator.PublishDuplicatesJson);
+                WriteFile("tag.json", TagJsonGenerator.PublishJson);
                 PrototypeJsonGenerator.PublishAll(_res, new ResPath("prototype").ToRootedPath());
                 ComponentJsonGenerator.PublishAll(_res, new ResPath("component").ToRootedPath());
                 // Corvax-Wiki-End
