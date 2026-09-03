@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -15,17 +14,13 @@ namespace Content.Server.Corvax.GuideGenerator;
 
 public static class FieldEntry
 {
-    private static readonly Regex DoubleEntryRegex = new(@"^[+-]?\d+\.\d+$");
+    private const string IdField = "id";
+    private const string TypeField = "type";
+    private const string TypeKeyPrefix = "type:";
 
-    private enum TypeCategory
-    {
-        Object,
-        String,
-        Collection,
-        ConcreteClass,
-        ValueType,
-        AbstractOrInterface
-    }
+    private static readonly Regex DecimalValueRegex = new(
+        @"^[+-]?\d+\.\d+$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static object? ProcessNode(object instance, MappingDataNode node, MappingDataNode? composed = null)
     {
@@ -34,33 +29,19 @@ public static class FieldEntry
         return DataNodeToObject(node);
     }
 
-    public static object? ComputePrototypeDefault(Type kind, ISerializationManager serializationManager)
+    public static object? ComputePrototypeDefault(Type prototypeType, ISerializationManager serializationManager)
     {
-        var instance = TryCreateInstance(kind);
+        var instance = TryCreateInstance(prototypeType);
         if (instance == null)
             return null;
 
-        try
-        {
-            EnsureFieldsCollectionsInitialized(instance);
-            if (!TryWriteValueAsMapping(serializationManager, kind, instance, out var node, true))
-                return new Dictionary<string, object?>();
-
-            node.Remove("id");
-            NormalizeFlagsToSequences(instance, node);
-            return DataNodeToObject(node);
-        }
-        catch
-        {
-            return new Dictionary<string, object?>();
-        }
-        finally
-        {
-            (instance as IDisposable)?.Dispose();
-        }
+        return SerializeDefault(instance, prototypeType, serializationManager, removeId: true);
     }
 
-    public static object? ComputeComponentDefault(string componentName, IComponentFactory componentFactory, ISerializationManager serializationManager)
+    public static object? ComputeComponentDefault(
+        string componentName,
+        IComponentFactory componentFactory,
+        ISerializationManager serializationManager)
     {
         if (!componentFactory.TryGetRegistration(componentName, out var registration))
             return null;
@@ -68,12 +49,7 @@ public static class FieldEntry
         try
         {
             var component = componentFactory.GetComponent(registration.Type);
-            EnsureFieldsCollectionsInitialized(component);
-            if (!TryWriteValueAsMapping(serializationManager, component.GetType(), component, out var node, true))
-                return new Dictionary<string, object?>();
-
-            NormalizeFlagsToSequences(component, node);
-            return DataNodeToObject(node);
+            return SerializeDefault(component, component.GetType(), serializationManager, removeId: false);
         }
         catch
         {
@@ -81,7 +57,12 @@ public static class FieldEntry
         }
     }
 
-    public static bool TryWriteValueAsMapping(ISerializationManager serializationManager, Type type, object value, out MappingDataNode node, bool alwaysWrite = false)
+    public static bool TryWriteValueAsMapping(
+        ISerializationManager serializationManager,
+        Type type,
+        object value,
+        out MappingDataNode node,
+        bool alwaysWrite = false)
     {
         try
         {
@@ -95,19 +76,21 @@ public static class FieldEntry
         }
     }
 
-    public static Dictionary<string, object?> DeduplicateAgainstDefault(object? defaultObj, Dictionary<string, object?> map)
+    public static Dictionary<string, object?> DeduplicateAgainstDefault(
+        object? defaultObject,
+        Dictionary<string, object?> values)
     {
-        var defaults = defaultObj as Dictionary<string, object?> ?? new Dictionary<string, object?>();
-        foreach (var fields in map.Values)
+        var defaults = defaultObject as Dictionary<string, object?> ?? new();
+        foreach (var value in values.Values)
         {
-            if (fields is Dictionary<string, object?> entityFields)
-                RemoveDefaultDuplicates(defaults, entityFields);
+            if (value is Dictionary<string, object?> fields)
+                RemoveDefaultDuplicates(defaults, fields);
         }
 
         return new Dictionary<string, object?>
         {
-            ["default"] = defaultObj,
-            ["id"] = map
+            ["default"] = defaultObject,
+            [IdField] = values
         };
     }
 
@@ -125,18 +108,20 @@ public static class FieldEntry
         return node.ToString();
     }
 
-    public static void SupplementReadOnlyFields(Type type, MappingDataNode serialized, MappingDataNode? composed)
+    public static void SupplementReadOnlyFields(
+        Type type,
+        MappingDataNode serialized,
+        MappingDataNode? composed)
     {
         if (composed == null)
             return;
 
         foreach (var member in GetSerializedMembers(type))
         {
-            if (!member.Attribute!.ReadOnly)
+            if (!member.Attribute!.ReadOnly || serialized.Has(member.Tag) || !composed.Has(member.Tag))
                 continue;
 
-            if (!serialized.Has(member.Tag) && composed.Has(member.Tag))
-                serialized[member.Tag] = composed[member.Tag].Copy();
+            serialized[member.Tag] = composed[member.Tag].Copy();
         }
     }
 
@@ -145,8 +130,10 @@ public static class FieldEntry
         var members = GetSerializedMembers(instance.GetType()).ToArray();
         foreach (var key in node.Keys.ToList())
         {
-            var member = members.FirstOrDefault(x => string.Equals(x.Tag, key, StringComparison.OrdinalIgnoreCase));
-            if (member == null || !member.Type.IsEnum || member.Type.GetCustomAttribute<FlagsAttribute>(false) == null)
+            var member = members.FirstOrDefault(candidate =>
+                string.Equals(candidate.Tag, key, StringComparison.OrdinalIgnoreCase));
+
+            if (member == null || !IsFlagsEnum(member.Type))
                 continue;
 
             var value = member.GetValue(instance);
@@ -154,9 +141,10 @@ public static class FieldEntry
                 continue;
 
             var numericValue = Convert.ToInt64(value);
-            var names = Enum.GetValues(member.Type).Cast<object>()
+            var names = Enum.GetValues(member.Type)
+                .Cast<object>()
                 .Select(flag => (Name: Enum.GetName(member.Type, flag)!, Value: Convert.ToInt64(flag)))
-                .Where(flag => flag.Value != 0 && (flag.Value & (flag.Value - 1)) == 0 && (numericValue & flag.Value) != 0)
+                .Where(flag => IsSingleSetFlag(flag.Value, numericValue))
                 .Select(flag => flag.Name)
                 .ToArray();
 
@@ -166,38 +154,79 @@ public static class FieldEntry
 
     public static void EnsureFieldsCollectionsInitialized(object instance)
     {
-        if (CanSafelyInitializeDefault(instance, new HashSet<Type>()))
-            InitializeMembers(instance);
+        // A serializer only emits some nullable fields when their object graph exists.
+        // Build that graph only when every nullable member has a safe default shape.
+        if (CanInitializeMembers(instance, new HashSet<Type>()))
+            InitializeMembers(instance, new HashSet<Type>());
     }
 
-    public static Type GetMemberType(MemberInfo member) => member switch
+    public static Type GetMemberType(MemberInfo member)
     {
-        PropertyInfo property => property.PropertyType,
-        FieldInfo field => field.FieldType,
-        _ => throw new ArgumentException($"Unsupported member type: {member.GetType()}", nameof(member))
-    };
+        if (member is PropertyInfo property)
+            return property.PropertyType;
+
+        if (member is FieldInfo field)
+            return field.FieldType;
+
+        throw new ArgumentException($"Unsupported member type: {member.GetType()}", nameof(member));
+    }
+
+    private static object? SerializeDefault(
+        object instance,
+        Type type,
+        ISerializationManager serializationManager,
+        bool removeId)
+    {
+        try
+        {
+            EnsureFieldsCollectionsInitialized(instance);
+            if (!TryWriteValueAsMapping(serializationManager, type, instance, out var node, alwaysWrite: true))
+                return new Dictionary<string, object?>();
+
+            if (removeId)
+                node.Remove(IdField);
+
+            NormalizeFlagsToSequences(instance, node);
+            return DataNodeToObject(node);
+        }
+        catch
+        {
+            return new Dictionary<string, object?>();
+        }
+        finally
+        {
+            (instance as IDisposable)?.Dispose();
+        }
+    }
 
     private static object? ConvertMapping(MappingDataNode mapping)
     {
         var result = mapping.ToDictionary(pair => pair.Key, pair => DataNodeToObject(pair.Value));
-        return mapping.Tag == null ? result : new Dictionary<string, object?> { [mapping.Tag] = result };
+        return mapping.Tag == null
+            ? result
+            : new Dictionary<string, object?> { [mapping.Tag] = result };
     }
 
     private static object ConvertSequence(SequenceDataNode sequence)
     {
         var items = sequence.Select(DataNodeToObject).ToList();
         var typedMap = new Dictionary<string, object?>();
+
         foreach (var item in items)
         {
-            if (item is not Dictionary<string, object?> dictionary || !dictionary.TryGetValue("type", out var type) || type == null)
+            if (item is not Dictionary<string, object?> dictionary ||
+                !dictionary.TryGetValue(TypeField, out var type) ||
+                type == null)
+            {
                 return items;
+            }
 
-            var clone = new Dictionary<string, object?>(dictionary);
-            clone.Remove("type");
-            typedMap[$"type:{type}"] = clone;
+            var fields = new Dictionary<string, object?>(dictionary);
+            fields.Remove(TypeField);
+            typedMap[$"{TypeKeyPrefix}{type}"] = fields;
         }
 
-        return typedMap.Count > 0 ? typedMap : items;
+        return typedMap.Count == 0 ? items : typedMap;
     }
 
     private static object? ConvertValue(ValueDataNode value)
@@ -206,11 +235,7 @@ public static class FieldEntry
             return null;
 
         var raw = value.Value;
-        object parsed = bool.TryParse(raw, out var boolean) ? boolean
-            : int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer) ? integer
-            : DoubleEntryRegex.IsMatch(raw) && double.TryParse(raw, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var number) ? number
-            : raw;
-
+        object parsed = ParseValue(raw);
         if (value.Tag == null)
             return parsed;
 
@@ -220,21 +245,48 @@ public static class FieldEntry
         };
     }
 
+    private static object ParseValue(string raw)
+    {
+        if (bool.TryParse(raw, out var boolean))
+            return boolean;
+
+        if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var integer))
+            return integer;
+
+        if (DecimalValueRegex.IsMatch(raw) &&
+            double.TryParse(raw, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var number))
+        {
+            return number;
+        }
+
+        return raw;
+    }
+
     private static bool AreEqual(object? first, object? second)
     {
-        if (first is null || second is null)
-            return first is null && second is null;
+        if (first == null || second == null)
+            return first == null && second == null;
 
-        if (first is IDictionary<string, object?> firstDictionary && second is IDictionary<string, object?> secondDictionary)
-            return firstDictionary.Count == secondDictionary.Count && firstDictionary.All(pair => secondDictionary.TryGetValue(pair.Key, out var value) && AreEqual(pair.Value, value));
+        if (first is IDictionary<string, object?> firstMap &&
+            second is IDictionary<string, object?> secondMap)
+        {
+            return firstMap.Count == secondMap.Count &&
+                   firstMap.All(pair => secondMap.TryGetValue(pair.Key, out var value) && AreEqual(pair.Value, value));
+        }
 
         if (first is IList firstList && second is IList secondList)
-            return firstList.Count == secondList.Count && Enumerable.Range(0, firstList.Count).All(index => AreEqual(firstList[index], secondList[index]));
+        {
+            return firstList.Count == secondList.Count &&
+                   Enumerable.Range(0, firstList.Count)
+                       .All(index => AreEqual(firstList[index], secondList[index]));
+        }
 
         return first.Equals(second);
     }
 
-    private static void RemoveDefaultDuplicates(Dictionary<string, object?> defaults, Dictionary<string, object?> target)
+    private static void RemoveDefaultDuplicates(
+        Dictionary<string, object?> defaults,
+        Dictionary<string, object?> target)
     {
         foreach (var key in target.Keys.ToList())
         {
@@ -243,13 +295,20 @@ public static class FieldEntry
 
             var value = target[key];
             if (AreEqual(defaultValue, value))
+            {
                 target.Remove(key);
-            else if (defaultValue is Dictionary<string, object?> defaultMap && value is Dictionary<string, object?> targetMap)
+                continue;
+            }
+
+            if (defaultValue is Dictionary<string, object?> defaultMap &&
+                value is Dictionary<string, object?> targetMap)
+            {
                 RemoveDefaultDuplicates(defaultMap, targetMap);
+            }
         }
     }
 
-    private static bool CanSafelyInitializeDefault(object instance, HashSet<Type> activeTypes)
+    private static bool CanInitializeMembers(object instance, HashSet<Type> activeTypes)
     {
         var type = instance.GetType();
         if (!activeTypes.Add(type))
@@ -262,7 +321,7 @@ public static class FieldEntry
                 if (member.GetValue(instance) != null)
                     continue;
 
-                if (!CanSafelyInitializeMember(member.Type, activeTypes))
+                if (!CanCreateDefaultValue(member.Type, activeTypes))
                     return false;
             }
 
@@ -278,101 +337,117 @@ public static class FieldEntry
         }
     }
 
-    private static bool CanSafelyInitializeMember(Type type, HashSet<Type> activeTypes) => ClassifyType(type) switch
+    private static bool CanCreateDefaultValue(Type type, HashSet<Type> activeTypes)
     {
-        TypeCategory.Object => false,
-        TypeCategory.String or TypeCategory.Collection or TypeCategory.ValueType => true,
-        TypeCategory.ConcreteClass => CanSafelyInitializeConcrete(type, activeTypes),
-        TypeCategory.AbstractOrInterface => CanSafelyInitializeAbstract(type, activeTypes),
-        _ => false
-    };
-
-    private static bool CanSafelyInitializeConcrete(Type type, HashSet<Type> activeTypes)
-    {
-        var instance = TryCreateInstance(type);
-        return instance != null && !activeTypes.Contains(type) && CanSafelyInitializeDefault(instance, activeTypes);
-    }
-
-    private static bool CanSafelyInitializeAbstract(Type type, HashSet<Type> activeTypes)
-    {
-        var concrete = FindConcreteAssignableType(type);
-        return concrete == null || !activeTypes.Contains(concrete) && CanSafelyInitializeConcrete(concrete, activeTypes);
-    }
-
-    private static void InitializeMembers(object instance)
-    {
-        foreach (var member in GetWritableMembers(instance.GetType()))
-        {
-            if (member.GetValue(instance) != null || !TryCreateDefaultValue(member.Type, out var value, out var recurse) || value == null)
-                continue;
-
-            try
-            {
-                member.SetValue(instance, value);
-                if (recurse)
-                    InitializeMembers(value);
-            }
-            catch
-            {
-                // Some serialized members intentionally reject reflective assignment.
-            }
-        }
-    }
-
-    private static bool TryCreateDefaultValue(Type type, out object? value, out bool recurse)
-    {
-        value = null;
-        recurse = false;
-
-        switch (ClassifyType(type))
-        {
-            case TypeCategory.String:
-                value = string.Empty;
-                return true;
-            case TypeCategory.Collection:
-                value = type.IsArray ? Array.CreateInstance(type.GetElementType()!, 0) : TryCreateInstance(type);
-                return value != null;
-            case TypeCategory.ConcreteClass:
-                value = TryCreateInstance(type);
-                recurse = value != null;
-                return value != null;
-            case TypeCategory.AbstractOrInterface:
-                value = FindConcreteAssignableType(type) is { } concrete ? TryCreateInstance(concrete) : null;
-                recurse = value != null;
-                return value != null;
-            default:
-                return false;
-        }
-    }
-
-    private static TypeCategory ClassifyType(Type type)
-    {
-        if (type == typeof(object))
-            return TypeCategory.Object;
+        if (type == typeof(object) || !type.IsClass && !type.IsInterface)
+            return true;
 
         if (type == typeof(string))
-            return TypeCategory.String;
+            return true;
 
         if (IsConcreteCollectionLike(type))
-            return TypeCategory.Collection;
+            return TryCreateInstance(type) != null || type.IsArray;
 
         if (type.IsClass && !type.IsAbstract)
-            return TypeCategory.ConcreteClass;
+        {
+            var instance = TryCreateInstance(type);
+            return instance != null && !activeTypes.Contains(type) && CanInitializeMembers(instance, activeTypes);
+        }
 
-        if (!type.IsAbstract && !type.IsInterface)
-            return TypeCategory.ValueType;
-
-        return TypeCategory.AbstractOrInterface;
+        var concrete = FindConcreteAssignableType(type);
+        return concrete == null || !activeTypes.Contains(concrete) && CanCreateDefaultValue(concrete, activeTypes);
     }
 
-    private static object? TryCreateInstance(Type type) =>
-        type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) == null
-            ? null
-            : Activator.CreateInstance(type, true);
+    private static void InitializeMembers(object instance, HashSet<Type> activeTypes)
+    {
+        var type = instance.GetType();
+        if (!activeTypes.Add(type))
+            return;
 
-    private static bool IsConcreteCollectionLike(Type type) =>
-        !type.IsAbstract && !type.IsInterface &&
-        (typeof(IDictionary).IsAssignableFrom(type) || typeof(IList).IsAssignableFrom(type) || type.IsArray || type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>));
+        try
+        {
+            foreach (var member in GetWritableMembers(type))
+            {
+                if (member.GetValue(instance) != null || !TryCreateDefaultValue(member.Type, out var value) || value == null)
+                    continue;
+
+                try
+                {
+                    member.SetValue(instance, value);
+                    if (value.GetType().IsClass && !IsConcreteCollectionLike(value.GetType()))
+                        InitializeMembers(value, activeTypes);
+                }
+                catch
+                {
+                    // Some serialized members intentionally reject reflective assignment.
+                }
+            }
+        }
+        finally
+        {
+            activeTypes.Remove(type);
+        }
+    }
+
+    private static bool TryCreateDefaultValue(Type type, out object? value)
+    {
+        value = null;
+
+        if (type == typeof(string))
+        {
+            value = string.Empty;
+            return true;
+        }
+
+        if (type.IsArray)
+        {
+            value = Array.CreateInstance(type.GetElementType()!, 0);
+            return true;
+        }
+
+        if (IsConcreteCollectionLike(type))
+        {
+            value = TryCreateInstance(type);
+            return value != null;
+        }
+
+        if (type.IsClass && !type.IsAbstract)
+        {
+            value = TryCreateInstance(type);
+            return value != null;
+        }
+
+        if (type.IsInterface || type.IsAbstract)
+        {
+            var concrete = FindConcreteAssignableType(type);
+            value = concrete == null ? null : TryCreateInstance(concrete);
+            return value != null;
+        }
+
+        return false;
+    }
+
+    private static object? TryCreateInstance(Type type)
+    {
+        var constructor = type.GetConstructor(
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            binder: null,
+            Type.EmptyTypes,
+            modifiers: null);
+
+        return constructor == null ? null : Activator.CreateInstance(type, nonPublic: true);
+    }
+
+    private static bool IsConcreteCollectionLike(Type type)
+    {
+        if (type.IsAbstract || type.IsInterface)
+            return false;
+
+        return typeof(IDictionary).IsAssignableFrom(type) ||
+               typeof(IList).IsAssignableFrom(type) ||
+               type.IsArray ||
+               type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>);
+    }
 
     private static Type? FindConcreteAssignableType(Type target)
     {
@@ -388,7 +463,12 @@ public static class FieldEntry
                 types = exception.Types.Where(type => type != null).Cast<Type>().ToArray();
             }
 
-            var candidate = types.FirstOrDefault(type => !type.IsAbstract && !type.IsInterface && target.IsAssignableFrom(type) && type.GetConstructor(Type.EmptyTypes) != null);
+            var candidate = types.FirstOrDefault(type =>
+                !type.IsAbstract &&
+                !type.IsInterface &&
+                target.IsAssignableFrom(type) &&
+                type.GetConstructor(Type.EmptyTypes) != null);
+
             if (candidate != null)
                 return candidate;
         }
@@ -399,6 +479,7 @@ public static class FieldEntry
     private static IEnumerable<SerializedMember> GetSerializedMembers(Type type)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.IgnoreCase;
+
         foreach (var field in type.GetFields(flags))
         {
             var attribute = field.GetCustomAttribute<DataFieldAttribute>();
@@ -417,6 +498,7 @@ public static class FieldEntry
     private static IEnumerable<SerializedMember> GetWritableMembers(Type type)
     {
         const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
         foreach (var field in type.GetFields(flags))
         {
             if (!field.IsInitOnly)
@@ -430,7 +512,14 @@ public static class FieldEntry
         }
     }
 
-    private static string LowerFirst(string value) => string.IsNullOrEmpty(value) ? value : char.ToLowerInvariant(value[0]) + value.Substring(1);
+    private static bool IsFlagsEnum(Type type) =>
+        type.IsEnum && type.GetCustomAttribute<FlagsAttribute>(inherit: false) != null;
+
+    private static bool IsSingleSetFlag(long flag, long value) =>
+        flag != 0 && (flag & (flag - 1)) == 0 && (value & flag) != 0;
+
+    private static string LowerFirst(string value) =>
+        string.IsNullOrEmpty(value) ? value : char.ToLowerInvariant(value[0]) + value.Substring(1);
 
     private sealed class SerializedMember
     {
@@ -447,24 +536,27 @@ public static class FieldEntry
         internal Type Type { get; }
         internal DataFieldAttribute? Attribute { get; }
 
-        internal object? GetValue(object instance) => Member switch
+        internal object? GetValue(object instance)
         {
-            FieldInfo field => field.GetValue(instance),
-            PropertyInfo property => property.GetValue(instance),
-            _ => null
-        };
+            if (Member is FieldInfo field)
+                return field.GetValue(instance);
+
+            if (Member is PropertyInfo property)
+                return property.GetValue(instance);
+
+            return null;
+        }
 
         internal void SetValue(object instance, object value)
         {
-            switch (Member)
+            if (Member is FieldInfo field)
             {
-                case FieldInfo field:
-                    field.SetValue(instance, value);
-                    break;
-                case PropertyInfo property:
-                    property.SetValue(instance, value);
-                    break;
+                field.SetValue(instance, value);
+                return;
             }
+
+            if (Member is PropertyInfo property)
+                property.SetValue(instance, value);
         }
     }
 }

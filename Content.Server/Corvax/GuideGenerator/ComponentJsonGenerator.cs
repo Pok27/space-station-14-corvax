@@ -1,7 +1,5 @@
 using System.IO;
 using System.Linq;
-using Robust.Shared.Localization;
-using Robust.Shared.Configuration;
 using Robust.Shared.ContentPack;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.Manager;
@@ -11,54 +9,44 @@ namespace Content.Server.Corvax.GuideGenerator;
 
 public static class ComponentJsonGenerator
 {
-    public static void PublishAll(IResourceManager res, ResPath destRoot)
+    public static void PublishAll(IResourceManager res, ResPath destination)
     {
-        PublishAll(new GuideGeneratorContext(
-            res,
-            IoCManager.Resolve<IPrototypeManager>(),
-            IoCManager.Resolve<ISerializationManager>(),
-            IoCManager.Resolve<IComponentFactory>(),
-            IoCManager.Resolve<ILocalizationManager>(),
-            IoCManager.Resolve<IConfigurationManager>(),
-            destRoot));
-    }
-
-    internal static void PublishAll(GuideGeneratorContext context)
-    {
-        var res = context.ResourceManager;
-        var proto = context.PrototypeManager;
-        var ser = context.SerializationManager;
-        var compFactory = context.ComponentFactory;
-        var destRoot = new ResPath("component").ToRootedPath();
+        var prototypeManager = IoCManager.Resolve<IPrototypeManager>();
+        var serializationManager = IoCManager.Resolve<ISerializationManager>();
+        var componentFactory = IoCManager.Resolve<IComponentFactory>();
+        var destinationRoot = new ResPath("component").ToRootedPath();
 
         // Map: component name -> (entity id -> component fields)
         var output = new Dictionary<string, Dictionary<string, object?>>();
-
-        foreach (var p in proto.EnumeratePrototypes(typeof(EntityPrototype)))
+        foreach (var entityPrototype in prototypeManager.EnumeratePrototypes<EntityPrototype>())
         {
-            if (p is not EntityPrototype entProto)
-                continue;
-
-            foreach (var (compName, componentFields) in BuildEntityComponentMap(entProto, proto, ser, compFactory))
+            foreach (var (componentName, componentFields) in BuildEntityComponentMap(
+                         entityPrototype,
+                         prototypeManager,
+                         serializationManager,
+                         componentFactory))
             {
-                GetOrCreateEntry(output, compName)[entProto.ID] = componentFields;
+                GetOrCreateEntry(output, componentName)[entityPrototype.ID] = componentFields;
             }
         }
 
         if (output.Count == 0)
             return;
 
-        res.UserData.CreateDir(destRoot);
-        foreach (var (compName, map) in output)
+        res.UserData.CreateDir(destinationRoot);
+        foreach (var (componentName, fieldsByEntity) in output)
         {
-            var defaultObj = FieldEntry.ComputeComponentDefault(compName, compFactory, ser);
-            var outObj = FieldEntry.DeduplicateAgainstDefault(defaultObj, map);
-            var directoryName = TextTools.CapitalizeString(compName);
-            var componentRoot = destRoot / directoryName;
+            var defaultObject = FieldEntry.ComputeComponentDefault(
+                componentName,
+                componentFactory,
+                serializationManager);
+            var componentOutput = FieldEntry.DeduplicateAgainstDefault(defaultObject, fieldsByEntity);
+            var directoryName = TextTools.CapitalizeString(componentName);
+            var componentRoot = destinationRoot / directoryName;
 
             res.UserData.CreateDir(componentRoot);
-            GuideJson.WriteFile(res, destRoot / (directoryName + ".json"), outObj);
-            GuideJson.WriteFile(res, componentRoot / "defaultFields.json", defaultObj);
+            GuideJson.WriteFile(res, destinationRoot / $"{directoryName}.json", componentOutput);
+            GuideJson.WriteFile(res, componentRoot / "defaultFields.json", defaultObject);
         }
     }
 

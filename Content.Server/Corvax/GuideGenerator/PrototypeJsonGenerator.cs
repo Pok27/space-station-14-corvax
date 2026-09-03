@@ -1,8 +1,6 @@
 using System.Linq;
 using System.Reflection;
-using Robust.Shared.Configuration;
 using Robust.Shared.ContentPack;
-using Robust.Shared.Localization;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.Manager;
 using Robust.Shared.Serialization.Manager.Attributes;
@@ -13,27 +11,14 @@ namespace Content.Server.Corvax.GuideGenerator;
 
 public static class PrototypeJsonGenerator
 {
-    public static void PublishAll(IResourceManager res, ResPath destRoot)
+    public static void PublishAll(IResourceManager res, ResPath destination)
     {
-        PublishAll(new GuideGeneratorContext(
-            res,
-            IoCManager.Resolve<IPrototypeManager>(),
-            IoCManager.Resolve<ISerializationManager>(),
-            IoCManager.Resolve<IComponentFactory>(),
-            IoCManager.Resolve<ILocalizationManager>(),
-            IoCManager.Resolve<IConfigurationManager>(),
-            destRoot));
-    }
+        var prototypeManager = IoCManager.Resolve<IPrototypeManager>();
+        var serializationManager = IoCManager.Resolve<ISerializationManager>();
+        var componentFactory = IoCManager.Resolve<IComponentFactory>();
+        var destinationRoot = new ResPath("prototype").ToRootedPath();
 
-    internal static void PublishAll(GuideGeneratorContext context)
-    {
-        var res = context.ResourceManager;
-        var destRoot = new ResPath("prototype").ToRootedPath();
-        var proto = context.PrototypeManager;
-        var ser = context.SerializationManager;
-        var compFactory = context.ComponentFactory;
-
-        foreach (var kind in proto.EnumeratePrototypeKinds().OrderBy(t => t.Name))
+        foreach (var kind in prototypeManager.EnumeratePrototypeKinds().OrderBy(type => type.Name))
         {
             // The entity prototype has its own generator due to its size <see cref="EntityJsonGenerator"/>.
             var isEntityPrototype = kind == typeof(EntityPrototype);
@@ -43,49 +28,46 @@ public static class PrototypeJsonGenerator
 
             // Map: entity id -> prototype fields
             var map = new Dictionary<string, object?>();
-
-            foreach (var p in proto.EnumeratePrototypes(kind))
+            foreach (var prototype in prototypeManager.EnumeratePrototypes(kind))
             {
-                if (!FieldEntry.TryWriteValueAsMapping(ser, kind, p, out var node))
+                if (!FieldEntry.TryWriteValueAsMapping(serializationManager, kind, prototype, out var node))
                     continue;
 
                 node.Remove("id");
+                var fields = FieldEntry.ProcessNode(prototype, node);
+                if (isEntityPrototype && prototype is EntityPrototype entityPrototype)
+                    fields = ProcessEntityPrototype(entityPrototype, prototypeManager, serializationManager, componentFactory, fields);
 
-                var fields = FieldEntry.ProcessNode(p, node);
-                if (isEntityPrototype && p is EntityPrototype entProto)
-                    fields = ProcessEntityPrototype(entProto, proto, ser, compFactory, fields);
-
-                map[p.ID] = fields;
+                map[prototype.ID] = fields;
             }
 
             if (map.Count == 0)
                 continue;
 
-            var defaultObj = FieldEntry.ComputePrototypeDefault(kind, ser);
-            var outObj = FieldEntry.DeduplicateAgainstDefault(defaultObj, map);
+            var defaultObject = FieldEntry.ComputePrototypeDefault(kind, serializationManager);
+            var output = FieldEntry.DeduplicateAgainstDefault(defaultObject, map);
+            res.UserData.CreateDir(destinationRoot);
 
-            res.UserData.CreateDir(destRoot);
-            var kindName = proto.TryGetKindFrom(kind, out var actualKindName)
+            var kindName = prototypeManager.TryGetKindFrom(kind, out var actualKindName)
                 ? actualKindName
                 : kind.Name;
             var directoryName = TextTools.CapitalizeString(kindName);
 
             if (!isEntityPrototype)
             {
-                GuideJson.WriteFile(res, destRoot / (directoryName + ".json"), outObj);
+                GuideJson.WriteFile(res, destinationRoot / $"{directoryName}.json", output);
                 continue;
             }
 
-            var kindRoot = destRoot / directoryName;
-            res.UserData.CreateDir(kindRoot);
-
-            var entityMap = outObj.TryGetValue("id", out var idVal) && idVal is Dictionary<string, object?> em
+            var entityRoot = destinationRoot / directoryName;
+            res.UserData.CreateDir(entityRoot);
+            var entityPrototypes = output.TryGetValue("id", out var idValue) && idValue is Dictionary<string, object?> em
                 ? em
-                : outObj;
+                : output;
 
-            foreach (var (id, fields) in entityMap)
+            foreach (var (id, fields) in entityPrototypes)
             {
-                GuideJson.WriteFile(res, kindRoot / (id + ".json"), fields);
+                GuideJson.WriteFile(res, entityRoot / $"{id}.json", fields);
             }
         }
     }

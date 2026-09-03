@@ -33,7 +33,6 @@ using Robust.Shared.Configuration;
 using Robust.Shared.ContentPack;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization;
-using Robust.Shared.Serialization.Manager;
 using Robust.Shared.Timing;
 using Robust.Shared.Utility;
 using Content.Shared.Emp;
@@ -152,15 +151,7 @@ namespace Content.Server.Entry
             {
                 var resPath = new ResPath(dest).ToRootedPath();
                 // Corvax-Wiki-Start
-                var generator = new GuideDataGenerator(new GuideGeneratorContext(
-                    _res,
-                    _proto,
-                    Dependencies.Resolve<ISerializationManager>(),
-                    _factory,
-                    Dependencies.Resolve<ILocalizationManager>(),
-                    _cfg,
-                    resPath));
-                generator.Generate();
+                GuideDataGenerator.Generate(_res, resPath);
                 // Corvax-Wiki-End
                 Dependencies.Resolve<IBaseServer>().Shutdown("Data generation done");
                 return;

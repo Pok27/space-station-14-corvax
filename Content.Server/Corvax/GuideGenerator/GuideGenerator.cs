@@ -1,43 +1,58 @@
 using System;
 using System.IO;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using Robust.Shared.ContentPack;
 using Robust.Shared.Utility;
 
 namespace Content.Server.Corvax.GuideGenerator;
 
-internal sealed class GuideDataGenerator
+internal static class GuideDataGenerator
 {
-    private readonly GuideGeneratorContext _context;
-
-    internal GuideDataGenerator(GuideGeneratorContext context)
+    internal static void Generate(IResourceManager resourceManager, ResPath destination)
     {
-        _context = context;
+        WriteFile(resourceManager, destination, "entity_prototypes.json", EntityJsonGenerator.PublishJson);
+        WriteFile(resourceManager, destination, "entity_parent.json", EntityParentJsonGenerator.PublishJson);
+        WriteFile(resourceManager, destination, "loc.json", LocJsonGenerator.PublishJson);
+        WriteFile(resourceManager, destination, "meta_license.json", MetaLicenseGenerator.PublishJson);
+        WriteFile(resourceManager, destination, "prototype.json", PrototypeListGenerator.PublishJson);
+        WriteFile(resourceManager, destination, "component.json", ComponentListGenerator.PublishJson);
+        WriteFile(resourceManager, destination, "prototype_store.json", PrototypeStoreGenerator.PublishJson);
+        WriteFile(resourceManager, destination, "component_store.json", ComponentStoreGenerator.PublishJson);
+        WriteFile(resourceManager, destination, "entity_project.json", EntityProjectGenerator.PublishJson);
+        WriteFile(resourceManager, destination, "entity_name.json", EntityNameDuplicatesJsonGenerator.PublishNameJson);
+        WriteFile(resourceManager, destination, "entity_name_wiki.json", stream => WikiEntityNameGenerator.PublishJson(stream, resourceManager, destination));
+        WriteFile(resourceManager, destination, "entity_name_duplicates.json", EntityNameDuplicatesJsonGenerator.PublishDuplicatesJson);
+        WriteFile(resourceManager, destination, "tag.json", TagJsonGenerator.PublishJson);
+
+        PrototypeJsonGenerator.PublishAll(resourceManager, destination);
+        ComponentJsonGenerator.PublishAll(resourceManager, destination);
     }
 
-    internal void Generate()
+    private static void WriteFile(
+        IResourceManager resourceManager,
+        ResPath destination,
+        string name,
+        Action<Stream> write)
     {
-        WriteFile("entity_prototypes.json", EntityJsonGenerator.PublishJson);
-        WriteFile("entity_parent.json", EntityParentJsonGenerator.PublishJson);
-        WriteFile("loc.json", LocJsonGenerator.PublishJson);
-        WriteFile("meta_license.json", MetaLicenseGenerator.PublishJson);
-        WriteFile("prototype.json", PrototypeListGenerator.PublishJson);
-        WriteFile("component.json", ComponentListGenerator.PublishJson);
-        WriteFile("prototype_store.json", PrototypeStoreGenerator.PublishJson);
-        WriteFile("component_store.json", ComponentStoreGenerator.PublishJson);
-        WriteFile("entity_project.json", EntityProjectGenerator.PublishJson);
-        WriteFile("entity_name.json", EntityNameDuplicatesJsonGenerator.PublishNameJson);
-        WriteFile("entity_name_wiki.json", stream => WikiEntityNameGenerator.PublishJson(stream, _context.ResourceManager, _context.Destination));
-        WriteFile("entity_name_duplicates.json", EntityNameDuplicatesJsonGenerator.PublishDuplicatesJson);
-        WriteFile("tag.json", TagJsonGenerator.PublishJson);
-
-        PrototypeJsonGenerator.PublishAll(_context);
-
-        ComponentJsonGenerator.PublishAll(_context);
-    }
-
-    private void WriteFile(string name, Action<Stream> write)
-    {
-        using var stream = _context.ResourceManager.UserData.OpenWrite(_context.Destination.WithName(name));
+        using var stream = resourceManager.UserData.OpenWrite(destination.WithName(name));
         write(stream);
+    }
+}
+
+internal static class GuideJson
+{
+    internal static readonly JsonSerializerOptions Options = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
+    internal static void Write(Stream stream, object? value) => JsonSerializer.Serialize(stream, value, Options);
+
+    internal static void WriteFile(IResourceManager resources, ResPath path, object? value)
+    {
+        using var stream = resources.UserData.OpenWrite(path);
+        Write(stream, value);
     }
 }
