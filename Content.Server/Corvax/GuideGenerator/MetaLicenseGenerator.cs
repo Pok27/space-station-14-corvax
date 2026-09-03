@@ -1,5 +1,4 @@
 using System.IO;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using Robust.Shared.Log;
 
@@ -7,12 +6,6 @@ namespace Content.Server.Corvax.GuideGenerator;
 
 public static class MetaLicenseGenerator
 {
-    private static readonly JsonSerializerOptions SerializeOptions = new()
-    {
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
-
     public static void PublishJson(Stream stream)
     {
         var workingDir = Directory.GetCurrentDirectory();
@@ -48,13 +41,13 @@ public static class MetaLicenseGenerator
             }
             catch (JsonException e)
             {
-                Logger.WarningS("guide", $"Skipping malformed meta.json: {metaPath} — {e.Message}");
+                Logger.WarningS("guide", $"Skipping malformed meta.json: {metaPath} - {e.Message}");
             }
         }
 
         if (output.Count == 0)
             return;
 
-        JsonSerializer.Serialize(stream, output, SerializeOptions);
+        GuideJson.Write(stream, output);
     }
 }

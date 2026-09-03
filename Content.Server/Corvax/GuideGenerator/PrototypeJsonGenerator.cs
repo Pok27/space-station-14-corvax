@@ -1,10 +1,11 @@
 using System.Linq;
 using System.Reflection;
-using System.Text.Encodings.Web;
-using System.Text.Json;
+using Robust.Shared.Configuration;
 using Robust.Shared.ContentPack;
+using Robust.Shared.Localization;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.Manager;
+using Robust.Shared.Serialization.Manager.Attributes;
 using Robust.Shared.Serialization.Markdown.Mapping;
 using Robust.Shared.Utility;
 
@@ -12,24 +13,32 @@ namespace Content.Server.Corvax.GuideGenerator;
 
 public static class PrototypeJsonGenerator
 {
-    private static readonly JsonSerializerOptions SerializeOptions = new()
-    {
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
-
     public static void PublishAll(IResourceManager res, ResPath destRoot)
     {
-        var proto = IoCManager.Resolve<IPrototypeManager>();
-        var ser = IoCManager.Resolve<ISerializationManager>();
-        var compFactory = IoCManager.Resolve<IComponentFactory>();
+        PublishAll(new GuideGeneratorContext(
+            res,
+            IoCManager.Resolve<IPrototypeManager>(),
+            IoCManager.Resolve<ISerializationManager>(),
+            IoCManager.Resolve<IComponentFactory>(),
+            IoCManager.Resolve<ILocalizationManager>(),
+            IoCManager.Resolve<IConfigurationManager>(),
+            destRoot));
+    }
+
+    internal static void PublishAll(GuideGeneratorContext context)
+    {
+        var res = context.ResourceManager;
+        var destRoot = new ResPath("prototype").ToRootedPath();
+        var proto = context.PrototypeManager;
+        var ser = context.SerializationManager;
+        var compFactory = context.ComponentFactory;
 
         foreach (var kind in proto.EnumeratePrototypeKinds().OrderBy(t => t.Name))
         {
             // The entity prototype has its own generator due to its size <see cref="EntityJsonGenerator"/>.
             var isEntityPrototype = kind == typeof(EntityPrototype);
 
-            if (HasUnsafeSerializedDataField(kind))
+            if (HasUnsafeSerializedDataField(kind, new HashSet<Type>()))
                 continue;
 
             // Map: entity id -> prototype fields
@@ -63,39 +72,25 @@ public static class PrototypeJsonGenerator
 
             if (!isEntityPrototype)
             {
-                var fileName = directoryName + ".json";
-                using var stream = res.UserData.OpenWrite(destRoot / fileName);
-                JsonSerializer.Serialize(stream, outObj, SerializeOptions);
+                GuideJson.WriteFile(res, destRoot / (directoryName + ".json"), outObj);
+                continue;
             }
-            else
+
+            var kindRoot = destRoot / directoryName;
+            res.UserData.CreateDir(kindRoot);
+
+            var entityMap = outObj.TryGetValue("id", out var idVal) && idVal is Dictionary<string, object?> em
+                ? em
+                : outObj;
+
+            foreach (var (id, fields) in entityMap)
             {
-                var kindRoot = destRoot / directoryName;
-                res.UserData.CreateDir(kindRoot);
-
-                var entityMap = outObj.TryGetValue("id", out var idVal) && idVal is Dictionary<string, object?> em
-                    ? em
-                    : outObj;
-
-                foreach (var (id, fields) in entityMap)
-                {
-                    using var prototypeStream = res.UserData.OpenWrite(kindRoot / (id + ".json"));
-                    JsonSerializer.Serialize(prototypeStream, fields, SerializeOptions);
-                }
+                GuideJson.WriteFile(res, kindRoot / (id + ".json"), fields);
             }
         }
     }
 
-    private static bool HasUnsafeSerializedDataField(Type type)
-    {
-        return HasUnsafeSerializedDataField(type, new HashSet<Type>());
-    }
-
-    private static object? ProcessEntityPrototype(
-        EntityPrototype entProto,
-        IPrototypeManager proto,
-        ISerializationManager ser,
-        IComponentFactory compFactory,
-        object? fields)
+    private static object? ProcessEntityPrototype(EntityPrototype entProto, IPrototypeManager proto, ISerializationManager ser, IComponentFactory compFactory, object? fields)
     {
         if (fields is not Dictionary<string, object?> fieldMap)
             return fields;
@@ -145,6 +140,6 @@ public static class PrototypeJsonGenerator
 
         return type.GetCustomAttributes(inherit: true)
                    .Any(attr => attr.GetType().Name is nameof(DataDefinitionAttribute) or nameof(SerializableAttribute))
-                && HasUnsafeSerializedDataField(type, visited);
+               && HasUnsafeSerializedDataField(type, visited);
     }
 }

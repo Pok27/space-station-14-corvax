@@ -1,7 +1,6 @@
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Text.Encodings.Web;
 using System.Text.Json.Serialization;
 using Content.Shared.Labels.Components;
 using Robust.Shared.Prototypes;
@@ -10,12 +9,6 @@ namespace Content.Server.Corvax.GuideGenerator;
 
 public sealed class EntityJsonGenerator
 {
-    private static readonly JsonSerializerOptions SerializeOptions = new()
-    {
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
-
     [JsonIgnore]
     public string Id { get; }
 
@@ -57,13 +50,12 @@ public sealed class EntityJsonGenerator
     public static void PublishJson(Stream stream)
     {
         var prototype = IoCManager.Resolve<IPrototypeManager>();
-        var prototypes =
-            prototype
-                .EnumeratePrototypes<EntityPrototype>()
-                .Where(x => !x.Abstract)
-                .Select(x => new EntityJsonGenerator(x))
-                .ToDictionary(x => x.Id, x => x);
+        var prototypes = prototype
+            .EnumeratePrototypes<EntityPrototype>()
+            .Where(x => !x.Abstract)
+            .Select(x => new EntityJsonGenerator(x))
+            .ToDictionary(x => x.Id, x => x);
 
-        JsonSerializer.Serialize(stream, prototypes, SerializeOptions);
+        GuideJson.Write(stream, prototypes);
     }
 }

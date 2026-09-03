@@ -1,26 +1,35 @@
-using System.Text.Encodings.Web;
-using System.Text.Json;
+using System.IO;
+using System.Linq;
+using Robust.Shared.Localization;
+using Robust.Shared.Configuration;
 using Robust.Shared.ContentPack;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.Manager;
-using Robust.Shared.Serialization.Markdown.Mapping;
 using Robust.Shared.Utility;
 
 namespace Content.Server.Corvax.GuideGenerator;
 
 public static class ComponentJsonGenerator
 {
-    private static readonly JsonSerializerOptions SerializeOptions = new()
-    {
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
-
     public static void PublishAll(IResourceManager res, ResPath destRoot)
     {
-        var proto = IoCManager.Resolve<IPrototypeManager>();
-        var ser = IoCManager.Resolve<ISerializationManager>();
-        var compFactory = IoCManager.Resolve<IComponentFactory>();
+        PublishAll(new GuideGeneratorContext(
+            res,
+            IoCManager.Resolve<IPrototypeManager>(),
+            IoCManager.Resolve<ISerializationManager>(),
+            IoCManager.Resolve<IComponentFactory>(),
+            IoCManager.Resolve<ILocalizationManager>(),
+            IoCManager.Resolve<IConfigurationManager>(),
+            destRoot));
+    }
+
+    internal static void PublishAll(GuideGeneratorContext context)
+    {
+        var res = context.ResourceManager;
+        var proto = context.PrototypeManager;
+        var ser = context.SerializationManager;
+        var compFactory = context.ComponentFactory;
+        var destRoot = new ResPath("component").ToRootedPath();
 
         // Map: component name -> (entity id -> component fields)
         var output = new Dictionary<string, Dictionary<string, object?>>();
@@ -39,45 +48,32 @@ public static class ComponentJsonGenerator
         if (output.Count == 0)
             return;
 
+        res.UserData.CreateDir(destRoot);
         foreach (var (compName, map) in output)
         {
             var defaultObj = FieldEntry.ComputeComponentDefault(compName, compFactory, ser);
             var outObj = FieldEntry.DeduplicateAgainstDefault(defaultObj, map);
-
-            res.UserData.CreateDir(destRoot);
             var directoryName = TextTools.CapitalizeString(compName);
-            var fileName = directoryName + ".json";
-            using (var stream = res.UserData.OpenWrite(destRoot / fileName))
-            {
-                JsonSerializer.Serialize(stream, outObj, SerializeOptions);
-            }
-
             var componentRoot = destRoot / directoryName;
-            res.UserData.CreateDir(componentRoot);
 
-            using (var defaultStream = res.UserData.OpenWrite(componentRoot / "defaultFields.json"))
-            {
-                JsonSerializer.Serialize(defaultStream, defaultObj, SerializeOptions);
-            }
+            res.UserData.CreateDir(componentRoot);
+            GuideJson.WriteFile(res, destRoot / (directoryName + ".json"), outObj);
+            GuideJson.WriteFile(res, componentRoot / "defaultFields.json", defaultObj);
         }
     }
 
-    private static Dictionary<string, object?> GetOrCreateEntry(
-        Dictionary<string, Dictionary<string, object?>> output, string key)
+    private static Dictionary<string, object?> GetOrCreateEntry(Dictionary<string, Dictionary<string, object?>> output, string key)
     {
         if (!output.TryGetValue(key, out var map))
         {
             map = new Dictionary<string, object?>();
             output[key] = map;
         }
+
         return map;
     }
 
-    public static Dictionary<string, object?> BuildEntityComponentMap(
-        EntityPrototype entProto,
-        IPrototypeManager proto,
-        ISerializationManager ser,
-        IComponentFactory compFactory)
+    public static Dictionary<string, object?> BuildEntityComponentMap(EntityPrototype entProto, IPrototypeManager proto, ISerializationManager ser, IComponentFactory compFactory)
     {
         var components = new Dictionary<string, object?>(StringComparer.Ordinal);
         var composedComponents = YAMLEntry.GetComposedComponentMappings(entProto, proto, ser, compFactory);
